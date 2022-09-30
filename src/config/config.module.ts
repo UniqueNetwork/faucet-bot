@@ -21,6 +21,7 @@ const loadConfig = (): Config => ({
   dropAmount: +process.env.DROP_AMOUNT || 3000,
   adminAddresses: process.env.ADMIN_ADDRESSES
     ? process.env.ADMIN_ADDRESSES.split(',')
+        .map((address) => address.trim())
         .filter((address) => !!address)
         .map((address) => address.toLowerCase())
     : [],
