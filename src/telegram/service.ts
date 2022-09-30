@@ -3,7 +3,7 @@ import { Cache } from 'cache-manager';
 import { ConfigService } from '@nestjs/config';
 import { Telegraf, Context } from 'telegraf';
 import { Update } from 'typegram';
-import { UniqueUtils } from '@unique-nft/api';
+import { Address } from '@unique-nft/utils';
 import { SdkService } from '../sdk/service';
 import { CacheConfig } from '../config/cache.config';
 import { formatDuration } from './utils';
@@ -13,6 +13,7 @@ export class TelegramService {
   private bot: Telegraf<Context<Update>>;
 
   private readonly ttl: number;
+  private readonly adminAddresses: string[];
 
   private readonly currentProgress: Map<number, boolean> = new Map();
 
@@ -22,6 +23,7 @@ export class TelegramService {
     private readonly sdk: SdkService,
   ) {
     this.ttl = this.configService.get<CacheConfig>('cache').ttl;
+    this.adminAddresses = this.configService.get('adminAddresses');
 
     this.startBot();
   }
@@ -35,15 +37,14 @@ export class TelegramService {
   }
 
   async onMessage(ctx) {
-    const address = ctx.message.text;
-    if (UniqueUtils.Address.is.substrateAddress(address)) {
+    const address = ctx.message?.text || '';
+    if (Address.is.substrateAddress(address)) {
       await this.tryDrop(ctx, address);
-    } else if (UniqueUtils.Address.is.ethereumAddress(address)) {
-      const substrateMirror =
-        UniqueUtils.Address.mirror.ethereumToSubstrate(address);
+    } else if (Address.is.ethereumAddress(address)) {
+      const substrateMirror = Address.mirror.ethereumToSubstrate(address);
       await this.tryDrop(ctx, substrateMirror);
     } else {
-      this.reply(ctx, 'Submit valid Substrate or Ethereum address');
+      await this.reply(ctx, 'Submit valid Substrate or Ethereum address');
     }
   }
 
@@ -58,13 +59,8 @@ export class TelegramService {
     }
   }
 
-  async tryDrop(ctx, address: string) {
-    if (this.currentProgress.get(ctx.message.from.id)) {
-      this.reply(ctx, 'Wait for the completion of the current transaction');
-      return;
-    }
-
-    const timeNow = Math.floor(Date.now() / 1000);
+  async availableByTtl(ctx, address: string, timeNow: number) {
+    if (this.adminAddresses.indexOf(address.toLowerCase())) return true;
 
     const lastTry = await this.cache.get(address);
     const timeLeft = (lastTry?.ctime || 0) + this.ttl - timeNow;
@@ -74,6 +70,21 @@ export class TelegramService {
         ctx,
         `I'm sorry, but you can complete the next transaction in ${timeLeftFormat}`,
       );
+      return false;
+    }
+
+    return true;
+  }
+
+  async tryDrop(ctx, address: string) {
+    if (this.currentProgress.get(ctx.message.from.id)) {
+      this.reply(ctx, 'Wait for the completion of the current transaction');
+      return;
+    }
+
+    const timeNow = Math.floor(Date.now() / 1000);
+
+    if (!(await this.availableByTtl(ctx, address, timeNow))) {
       return;
     }
 
@@ -97,6 +108,7 @@ export class TelegramService {
 
     if (!ok) {
       await this.reply(ctx, 'Transaction failed, please try again later');
+      return false;
     }
 
     await this.reply(

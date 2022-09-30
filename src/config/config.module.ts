@@ -8,6 +8,7 @@ export type Config = {
   restUrl: string;
   telegramToken: string;
   dropAmount: number;
+  adminAddresses: string[];
 
   cache: CacheConfig;
 };
@@ -18,6 +19,11 @@ const loadConfig = (): Config => ({
   restUrl: process.env.REST_URL,
   telegramToken: process.env.TELEGRAM_TOKEN,
   dropAmount: +process.env.DROP_AMOUNT || 3000,
+  adminAddresses: process.env.ADMIN_ADDRESSES
+    ? process.env.ADMIN_ADDRESSES.split(',')
+        .filter((address) => !!address)
+        .map((address) => address.toLowerCase())
+    : [],
 
   cache: createCacheConfig(process.env),
 });
