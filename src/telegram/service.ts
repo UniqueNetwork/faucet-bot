@@ -12,7 +12,7 @@ import { Update } from 'typegram';
 import { Address } from '@unique-nft/utils';
 import { SdkService } from '../sdk/service';
 import { CacheConfig } from '../config/cache.config';
-import { formatDuration } from './utils';
+import { formatDuration, getUsername } from './utils';
 
 @Injectable()
 export class TelegramService implements OnModuleInit {
@@ -47,6 +47,9 @@ export class TelegramService implements OnModuleInit {
 
   async onMessage(ctx) {
     const address = ctx.message?.text || '';
+
+    this.logger.log(`${getUsername(ctx.message?.from)} -> bot: ${address}`);
+
     if (Address.is.substrateAddress(address)) {
       await this.tryDrop(ctx, address);
     } else if (Address.is.ethereumAddress(address)) {
@@ -59,6 +62,8 @@ export class TelegramService implements OnModuleInit {
 
   private reply(ctx, message: string, options?) {
     try {
+      this.logger.log(`bot -> ${getUsername(ctx.message?.from)}: ${message}`);
+
       return ctx.reply(message, {
         ...options,
         reply_to_message_id: ctx.message.message_id,
@@ -122,8 +127,7 @@ export class TelegramService implements OnModuleInit {
 
     await this.reply(
       ctx,
-      `The payment successful.
-Current balance: ${balance.availableBalance.formatted}`,
+      `The payment successful. Current balance: ${balance.availableBalance.formatted}`,
       {
         reply_markup: {
           resize_keyboard: true,
