@@ -1,4 +1,10 @@
-import { CACHE_MANAGER, Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  CACHE_MANAGER,
+  Inject,
+  Injectable,
+  Logger,
+  OnModuleInit,
+} from '@nestjs/common';
 import { Cache } from 'cache-manager';
 import { ConfigService } from '@nestjs/config';
 import { Telegraf, Context } from 'telegraf';
@@ -9,7 +15,7 @@ import { CacheConfig } from '../config/cache.config';
 import { formatDuration } from './utils';
 
 @Injectable()
-export class TelegramService {
+export class TelegramService implements OnModuleInit {
   private bot: Telegraf<Context<Update>>;
 
   private readonly ttl: number;
@@ -26,11 +32,9 @@ export class TelegramService {
   ) {
     this.ttl = this.configService.get<CacheConfig>('cache').ttl;
     this.adminAddresses = this.configService.get('adminAddresses');
-
-    this.startBot();
   }
 
-  async startBot(): Promise<void> {
+  async onModuleInit(): Promise<void> {
     this.bot = new Telegraf(this.configService.get('telegramToken'));
 
     this.bot.on('message', this.onMessage.bind(this));
