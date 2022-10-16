@@ -1,4 +1,10 @@
-import { CACHE_MANAGER, Inject, Injectable } from '@nestjs/common';
+import {
+  CACHE_MANAGER,
+  Inject,
+  Injectable,
+  Logger,
+  OnModuleInit,
+} from '@nestjs/common';
 import { Cache } from 'cache-manager';
 import { ConfigService } from '@nestjs/config';
 import { Telegraf, Context } from 'telegraf';
@@ -6,16 +12,18 @@ import { Update } from 'typegram';
 import { Address } from '@unique-nft/utils';
 import { SdkService } from '../sdk/service';
 import { CacheConfig } from '../config/cache.config';
-import { formatDuration } from './utils';
+import { formatDuration, getUsername } from './utils';
 
 @Injectable()
-export class TelegramService {
+export class TelegramService implements OnModuleInit {
   private bot: Telegraf<Context<Update>>;
 
   private readonly ttl: number;
   private readonly adminAddresses: string[];
 
   private readonly currentProgress: Map<number, boolean> = new Map();
+
+  private readonly logger = new Logger(TelegramService.name);
 
   constructor(
     private readonly configService: ConfigService,
@@ -24,20 +32,24 @@ export class TelegramService {
   ) {
     this.ttl = this.configService.get<CacheConfig>('cache').ttl;
     this.adminAddresses = this.configService.get('adminAddresses');
-
-    this.startBot();
   }
 
-  startBot() {
+  async onModuleInit(): Promise<void> {
     this.bot = new Telegraf(this.configService.get('telegramToken'));
 
     this.bot.on('message', this.onMessage.bind(this));
 
-    this.bot.launch();
+    await this.bot.launch();
+
+    const { username } = this.bot.botInfo;
+    this.logger.log(`Bot started - https://t.me/${username} (@${username})`);
   }
 
   async onMessage(ctx) {
     const address = ctx.message?.text || '';
+
+    this.logger.log(`${getUsername(ctx.message?.from)} -> bot: ${address}`);
+
     if (Address.is.substrateAddress(address)) {
       await this.tryDrop(ctx, address);
     } else if (Address.is.ethereumAddress(address)) {
@@ -50,19 +62,21 @@ export class TelegramService {
 
   private reply(ctx, message: string, options?) {
     try {
+      this.logger.log(`bot -> ${getUsername(ctx.message?.from)}: ${message}`);
+
       return ctx.reply(message, {
         ...options,
         reply_to_message_id: ctx.message.message_id,
       });
-    } catch (err) {
-      console.error(err);
+    } catch (error) {
+      this.logger.error(error);
     }
   }
 
   async availableByTtl(ctx, address: string, timeNow: number) {
     if (this.adminAddresses.indexOf(address.toLowerCase())) return true;
 
-    const lastTry = await this.cache.get(address);
+    const lastTry = await this.cache.get<{ ctime: number }>(address);
     const timeLeft = (lastTry?.ctime || 0) + this.ttl - timeNow;
     if (timeLeft > 0) {
       const timeLeftFormat = formatDuration(timeLeft);
@@ -92,7 +106,7 @@ export class TelegramService {
     try {
       const sent = await this.dropToAddress(ctx, address);
       if (sent) {
-        await this.cache.set(address, {
+        await this.cache.set<{ ctime: number }>(address, {
           ctime: timeNow,
         });
       }
@@ -113,8 +127,7 @@ export class TelegramService {
 
     await this.reply(
       ctx,
-      `The payment successful.
-Current balance: ${balance.availableBalance.formatted}`,
+      `The payment successful. Current balance: ${balance.availableBalance.formatted}`,
       {
         reply_markup: {
           resize_keyboard: true,

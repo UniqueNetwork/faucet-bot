@@ -1,35 +1,19 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { KeyringAccount, KeyringProvider } from '@unique-nft/accounts/keyring';
-import { SignatureType } from '@unique-nft/accounts';
-import { IClient, Sdk } from '@unique-nft/sdk';
+import { IClient } from '@unique-nft/sdk';
+import { InjectAccount, InjectSdk } from './providers';
 
 @Injectable()
 export class SdkService {
-  private sdk: IClient;
-  private account: KeyringAccount;
+  private readonly logger = new Logger(SdkService.name);
 
-  constructor(private readonly configService: ConfigService) {}
-
-  private async createSdk() {
-    const keyringProvider = new KeyringProvider({
-      type: SignatureType.Sr25519,
-    });
-    await keyringProvider.init();
-
-    this.account = keyringProvider.addSeed(this.configService.get('seed'));
-    const restUrl = this.configService.get('restUrl');
-
-    this.sdk = new Sdk({
-      signer: this.account,
-      baseUrl: restUrl,
-    });
-  }
+  constructor(
+    @InjectSdk private readonly sdk: IClient,
+    @InjectAccount private readonly account,
+    private readonly configService: ConfigService,
+  ) {}
 
   public async sendTo(destination: string) {
-    if (!this.sdk) {
-      await this.createSdk();
-    }
     const amount = this.configService.get('dropAmount');
     const address = this.account.instance.address;
 
@@ -45,14 +29,13 @@ export class SdkService {
       });
 
       return {
-        ok: result.parsed.success,
+        ok: !result.isError,
         balance,
       };
-    } catch (err) {
-      console.error(err, JSON.stringify(err.details, null, 2));
-      return {
-        ok: false,
-      };
+    } catch (error) {
+      this.logger.error(error);
+
+      return { ok: false };
     }
   }
 }
