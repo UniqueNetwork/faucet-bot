@@ -1,13 +1,17 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { KeyringAccount, KeyringProvider } from '@unique-nft/accounts/keyring';
+import { Account } from '@unique-nft/accounts';
+import { KeyringProvider } from '@unique-nft/accounts/keyring';
 import { SignatureType } from '@unique-nft/accounts';
 import { IClient, Sdk } from '@unique-nft/sdk';
+import { KeyringPair } from '@polkadot/keyring/types';
 
 @Injectable()
 export class SdkService {
   private sdk: IClient;
-  private account: KeyringAccount;
+  private account: Account<KeyringPair>;
+
+  private readonly logger = new Logger(SdkService.name);
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -15,10 +19,16 @@ export class SdkService {
     const keyringProvider = new KeyringProvider({
       type: SignatureType.Sr25519,
     });
+
     await keyringProvider.init();
 
-    this.account = keyringProvider.addSeed(this.configService.get('seed'));
-    const restUrl = this.configService.get('restUrl');
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    this.account = keyringProvider.addSeed(
+      this.configService.get<string>('seed'),
+    );
+
+    const restUrl = this.configService.get<string>('restUrl');
 
     this.sdk = new Sdk({
       signer: this.account,
@@ -45,14 +55,13 @@ export class SdkService {
       });
 
       return {
-        ok: result.parsed.success,
+        ok: !result.isError,
         balance,
       };
-    } catch (err) {
-      console.error(err, JSON.stringify(err.details, null, 2));
-      return {
-        ok: false,
-      };
+    } catch (error) {
+      this.logger.error(error);
+
+      return { ok: false };
     }
   }
 }

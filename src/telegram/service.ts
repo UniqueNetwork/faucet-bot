@@ -1,4 +1,4 @@
-import { CACHE_MANAGER, Inject, Injectable } from '@nestjs/common';
+import { CACHE_MANAGER, Inject, Injectable, Logger } from '@nestjs/common';
 import { Cache } from 'cache-manager';
 import { ConfigService } from '@nestjs/config';
 import { Telegraf, Context } from 'telegraf';
@@ -17,6 +17,8 @@ export class TelegramService {
 
   private readonly currentProgress: Map<number, boolean> = new Map();
 
+  private readonly logger = new Logger(TelegramService.name);
+
   constructor(
     private readonly configService: ConfigService,
     @Inject(CACHE_MANAGER) private readonly cache: Cache,
@@ -28,12 +30,15 @@ export class TelegramService {
     this.startBot();
   }
 
-  startBot() {
+  async startBot(): Promise<void> {
     this.bot = new Telegraf(this.configService.get('telegramToken'));
 
     this.bot.on('message', this.onMessage.bind(this));
 
-    this.bot.launch();
+    await this.bot.launch();
+
+    const { username } = this.bot.botInfo;
+    this.logger.log(`Bot started - https://t.me/${username} (@${username})`);
   }
 
   async onMessage(ctx) {
@@ -54,15 +59,15 @@ export class TelegramService {
         ...options,
         reply_to_message_id: ctx.message.message_id,
       });
-    } catch (err) {
-      console.error(err);
+    } catch (error) {
+      this.logger.error(error);
     }
   }
 
   async availableByTtl(ctx, address: string, timeNow: number) {
     if (this.adminAddresses.indexOf(address.toLowerCase())) return true;
 
-    const lastTry = await this.cache.get(address);
+    const lastTry = await this.cache.get<{ ctime: number }>(address);
     const timeLeft = (lastTry?.ctime || 0) + this.ttl - timeNow;
     if (timeLeft > 0) {
       const timeLeftFormat = formatDuration(timeLeft);
@@ -92,7 +97,7 @@ export class TelegramService {
     try {
       const sent = await this.dropToAddress(ctx, address);
       if (sent) {
-        await this.cache.set(address, {
+        await this.cache.set<{ ctime: number }>(address, {
           ctime: timeNow,
         });
       }
