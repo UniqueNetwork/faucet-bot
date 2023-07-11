@@ -34,7 +34,7 @@ export class SdkService {
     const address = this.account.instance.address;
 
     try {
-      const result = await this.sdk.balance.transfer.submitWaitResult({
+      await this.sdk.balance.transfer.submitWaitResult({
         address,
         destination,
         amount,
@@ -45,7 +45,7 @@ export class SdkService {
       });
 
       return {
-        ok: result.parsed.success,
+        ok: true,
         balance,
       };
     } catch (err) {

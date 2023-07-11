@@ -1,21 +1,16 @@
 import { CACHE_MANAGER, Inject, Injectable } from '@nestjs/common';
 import { Cache } from 'cache-manager';
-import { ConfigService } from '@nestjs/config';
-import { Telegraf, Context } from 'telegraf';
-import { Update } from 'typegram';
 import { Address } from '@unique-nft/utils';
+import { formatDuration } from './utils';
+import { ConfigService } from '@nestjs/config';
 import { SdkService } from '../sdk/service';
 import { CacheConfig } from '../config/cache.config';
-import { formatDuration } from './utils';
 
 @Injectable()
-export class TelegramService {
-  private bot: Telegraf<Context<Update>>;
-
+export class FaucetService {
   private readonly ttl: number;
-  private readonly adminAddresses: string[];
-
   private readonly currentProgress: Map<number, boolean> = new Map();
+  private readonly adminAddresses: string[];
 
   constructor(
     private readonly configService: ConfigService,
@@ -24,56 +19,15 @@ export class TelegramService {
   ) {
     this.ttl = this.configService.get<CacheConfig>('cache').ttl;
     this.adminAddresses = this.configService.get('adminAddresses');
-
-    this.startBot();
   }
 
-  startBot() {
-    this.bot = new Telegraf(this.configService.get('telegramToken'));
-
-    this.bot.on('message', this.onMessage.bind(this));
-
-    this.bot.launch();
-  }
-
-  async onMessage(ctx) {
-    const address = ctx.message?.text || '';
+  public async onReceiveAddress(ctx, address: string) {
     if (Address.is.substrateAddress(address)) {
       await this.tryDrop(ctx, address);
     } else if (Address.is.ethereumAddress(address)) {
       const substrateMirror = Address.mirror.ethereumToSubstrate(address);
       await this.tryDrop(ctx, substrateMirror);
-    } else {
-      await this.reply(ctx, 'Submit valid Substrate or Ethereum address');
     }
-  }
-
-  private reply(ctx, message: string, options?) {
-    try {
-      return ctx.reply(message, {
-        ...options,
-        reply_to_message_id: ctx.message.message_id,
-      });
-    } catch (err) {
-      console.error(err);
-    }
-  }
-
-  async availableByTtl(ctx, address: string, timeNow: number) {
-    if (this.adminAddresses.indexOf(address.toLowerCase())) return true;
-
-    const lastTry = await this.cache.get(address);
-    const timeLeft = (lastTry?.ctime || 0) + this.ttl - timeNow;
-    if (timeLeft > 0) {
-      const timeLeftFormat = formatDuration(timeLeft);
-      await this.reply(
-        ctx,
-        `I'm sorry, but you can complete the next transaction in ${timeLeftFormat}`,
-      );
-      return false;
-    }
-
-    return true;
   }
 
   async tryDrop(ctx, address: string) {
@@ -124,5 +78,33 @@ Current balance: ${balance.availableBalance.formatted}`,
     );
 
     return ok;
+  }
+
+  async availableByTtl(ctx, address: string, timeNow: number) {
+    if (this.adminAddresses.includes(address.toLowerCase())) return true;
+
+    const lastTry = await this.cache.get(address);
+    const timeLeft = (lastTry?.ctime || 0) + this.ttl - timeNow;
+    if (timeLeft > 0) {
+      const timeLeftFormat = formatDuration(timeLeft);
+      await this.reply(
+        ctx,
+        `I'm sorry, but you can complete the next transaction in ${timeLeftFormat}`,
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  private reply(ctx, message: string, options?) {
+    try {
+      return ctx.reply(message, {
+        ...options,
+        reply_to_message_id: ctx.message.message_id,
+      });
+    } catch (err) {
+      console.error(err);
+    }
   }
 }
