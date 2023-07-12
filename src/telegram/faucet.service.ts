@@ -1,16 +1,18 @@
-import { CACHE_MANAGER, Inject, Injectable } from '@nestjs/common';
+import { CACHE_MANAGER, Inject, Injectable, Logger } from '@nestjs/common';
 import { Cache } from 'cache-manager';
 import { Address } from '@unique-nft/utils';
-import { formatDuration } from './utils';
 import { ConfigService } from '@nestjs/config';
 import { SdkService } from '../sdk/service';
 import { CacheConfig } from '../config/cache.config';
+import { formatDuration, getUsername } from './utils';
 
 @Injectable()
 export class FaucetService {
   private readonly ttl: number;
   private readonly currentProgress: Map<number, boolean> = new Map();
   private readonly adminAddresses: string[];
+
+  private readonly logger = new Logger(FaucetService.name);
 
   constructor(
     private readonly configService: ConfigService,
@@ -22,12 +24,44 @@ export class FaucetService {
   }
 
   public async onReceiveAddress(ctx, address: string) {
+    this.logger.log(`${getUsername(ctx.message?.from)} -> bot: ${address}`);
+
     if (Address.is.substrateAddress(address)) {
       await this.tryDrop(ctx, address);
     } else if (Address.is.ethereumAddress(address)) {
       const substrateMirror = Address.mirror.ethereumToSubstrate(address);
       await this.tryDrop(ctx, substrateMirror);
     }
+  }
+
+  private reply(ctx, message: string, options?) {
+    try {
+      this.logger.log(`bot -> ${getUsername(ctx.message?.from)}: ${message}`);
+
+      return ctx.reply(message, {
+        ...options,
+        reply_to_message_id: ctx.message.message_id,
+      });
+    } catch (error) {
+      this.logger.error(error);
+    }
+  }
+
+  async availableByTtl(ctx, address: string, timeNow: number) {
+    if (this.adminAddresses.includes(address.toLowerCase())) return true;
+
+    const lastTry = await this.cache.get<{ ctime: number }>(address);
+    const timeLeft = (lastTry?.ctime || 0) + this.ttl - timeNow;
+    if (timeLeft > 0) {
+      const timeLeftFormat = formatDuration(timeLeft);
+      await this.reply(
+        ctx,
+        `I'm sorry, but you can complete the next transaction in ${timeLeftFormat}`,
+      );
+      return false;
+    }
+
+    return true;
   }
 
   async tryDrop(ctx, address: string) {
@@ -46,7 +80,7 @@ export class FaucetService {
     try {
       const sent = await this.dropToAddress(ctx, address);
       if (sent) {
-        await this.cache.set(address, {
+        await this.cache.set<{ ctime: number }>(address, {
           ctime: timeNow,
         });
       }
@@ -67,8 +101,7 @@ export class FaucetService {
 
     await this.reply(
       ctx,
-      `The payment successful.
-Current balance: ${balance.availableBalance.formatted}`,
+      `The payment successful. Current balance: ${balance.availableBalance.formatted}`,
       {
         reply_markup: {
           resize_keyboard: true,
@@ -78,33 +111,5 @@ Current balance: ${balance.availableBalance.formatted}`,
     );
 
     return ok;
-  }
-
-  async availableByTtl(ctx, address: string, timeNow: number) {
-    if (this.adminAddresses.includes(address.toLowerCase())) return true;
-
-    const lastTry = await this.cache.get(address);
-    const timeLeft = (lastTry?.ctime || 0) + this.ttl - timeNow;
-    if (timeLeft > 0) {
-      const timeLeftFormat = formatDuration(timeLeft);
-      await this.reply(
-        ctx,
-        `I'm sorry, but you can complete the next transaction in ${timeLeftFormat}`,
-      );
-      return false;
-    }
-
-    return true;
-  }
-
-  private reply(ctx, message: string, options?) {
-    try {
-      return ctx.reply(message, {
-        ...options,
-        reply_to_message_id: ctx.message.message_id,
-      });
-    } catch (err) {
-      console.error(err);
-    }
   }
 }

@@ -1,3 +1,5 @@
+import { User } from 'typegram';
+
 export function formatDuration(duration: number) {
   const hours = Math.floor(duration / 3600);
   const minutes = Math.floor((duration - hours * 3600) / 60);
@@ -8,4 +10,12 @@ export function formatDuration(duration: number) {
   values.push(`0${minutes}`.substr(-2));
   values.push(`0${seconds}`.substr(-2));
   return values.join(':');
+}
+
+export function getUsername(user?: User): string {
+  if (!user) return 'unknown user';
+
+  const { username, id } = user;
+
+  return username ? `@${username}` : `id:${id}`;
 }

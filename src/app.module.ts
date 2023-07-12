@@ -5,10 +5,18 @@ import { CacheModule } from './cache.module';
 import { SdkService } from './sdk/service';
 import { FaucetService } from './telegram/faucet.service';
 import { BalancesService } from './telegram/balances.service';
+import { accountProvider, sdkProvider } from './sdk/providers';
 
 @Module({
   imports: [GlobalConfigModule, CacheModule],
   controllers: [],
-  providers: [SdkService, TelegramService, FaucetService, BalancesService],
+  providers: [
+    accountProvider,
+    sdkProvider,
+    SdkService,
+    TelegramService,
+    FaucetService,
+    BalancesService,
+  ],
 })
 export class AppModule {}

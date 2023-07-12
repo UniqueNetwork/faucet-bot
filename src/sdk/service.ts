@@ -1,40 +1,39 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { KeyringAccount, KeyringProvider } from '@unique-nft/accounts/keyring';
-import { SignatureType } from '@unique-nft/accounts';
-import { IClient, Sdk } from '@unique-nft/sdk';
+import { IClient } from '@unique-nft/sdk';
+import { InjectAccount, InjectSdk } from './providers';
+import { Account } from '@unique-nft/accounts';
 
 @Injectable()
-export class SdkService {
-  private sdk: IClient;
-  private account: KeyringAccount;
+export class SdkService implements OnModuleInit {
+  private readonly logger = new Logger(SdkService.name);
+  private readonly dropAmount: number;
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    @InjectSdk private readonly sdk: IClient,
+    @InjectAccount private readonly account: Account,
+    configService: ConfigService,
+  ) {
+    this.dropAmount = configService.get<number>('dropAmount');
+  }
 
-  private async createSdk() {
-    const keyringProvider = new KeyringProvider({
-      type: SignatureType.Sr25519,
-    });
-    await keyringProvider.init();
+  async onModuleInit(): Promise<void> {
+    const address = this.account.getAddress();
+    const {
+      freeBalance: { formatted, amount },
+    } = await this.sdk.balance.get({ address });
 
-    this.account = keyringProvider.addSeed(this.configService.get('seed'));
-    const restUrl = this.configService.get('restUrl');
-
-    this.sdk = new Sdk({
-      signer: this.account,
-      baseUrl: restUrl,
-    });
+    this.logger.log(`Bot substrate address is ${address}`);
+    this.logger.log(`Bot has ${formatted} (${amount}) free balance`);
+    this.logger.log(`Bot going to drop ${this.dropAmount} on each request`);
   }
 
   public async sendTo(destination: string) {
-    if (!this.sdk) {
-      await this.createSdk();
-    }
-    const amount = this.configService.get('dropAmount');
-    const address = this.account.instance.address;
+    const amount = this.dropAmount;
+    const address = this.account.getAddress();
 
     try {
-      await this.sdk.balance.transfer.submitWaitResult({
+      const result = await this.sdk.balance.transfer.submitWaitResult({
         address,
         destination,
         amount,
@@ -45,14 +44,13 @@ export class SdkService {
       });
 
       return {
-        ok: true,
+        ok: !result.isError,
         balance,
       };
-    } catch (err) {
-      console.error(err, JSON.stringify(err.details, null, 2));
-      return {
-        ok: false,
-      };
+    } catch (error) {
+      this.logger.error(error);
+
+      return { ok: false };
     }
   }
 }
