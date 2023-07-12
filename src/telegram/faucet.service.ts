@@ -1,29 +1,18 @@
-import {
-  CACHE_MANAGER,
-  Inject,
-  Injectable,
-  Logger,
-  OnModuleInit,
-} from '@nestjs/common';
+import { CACHE_MANAGER, Inject, Injectable, Logger } from '@nestjs/common';
 import { Cache } from 'cache-manager';
-import { ConfigService } from '@nestjs/config';
-import { Telegraf, Context } from 'telegraf';
-import { Update } from 'typegram';
 import { Address } from '@unique-nft/utils';
+import { ConfigService } from '@nestjs/config';
 import { SdkService } from '../sdk/service';
 import { CacheConfig } from '../config/cache.config';
 import { formatDuration, getUsername } from './utils';
 
 @Injectable()
-export class TelegramService implements OnModuleInit {
-  private bot: Telegraf<Context<Update>>;
-
+export class FaucetService {
   private readonly ttl: number;
+  private readonly currentProgress: Map<number, boolean> = new Map();
   private readonly adminAddresses: string[];
 
-  private readonly currentProgress: Map<number, boolean> = new Map();
-
-  private readonly logger = new Logger(TelegramService.name);
+  private readonly logger = new Logger(FaucetService.name);
 
   constructor(
     private readonly configService: ConfigService,
@@ -34,20 +23,7 @@ export class TelegramService implements OnModuleInit {
     this.adminAddresses = this.configService.get('adminAddresses');
   }
 
-  async onModuleInit(): Promise<void> {
-    this.bot = new Telegraf(this.configService.get('telegramToken'));
-
-    this.bot.on('message', this.onMessage.bind(this));
-
-    await this.bot.launch();
-
-    const { username } = this.bot.botInfo;
-    this.logger.log(`Bot started - https://t.me/${username} (@${username})`);
-  }
-
-  async onMessage(ctx) {
-    const address = ctx.message?.text || '';
-
+  public async onReceiveAddress(ctx, address: string) {
     this.logger.log(`${getUsername(ctx.message?.from)} -> bot: ${address}`);
 
     if (Address.is.substrateAddress(address)) {
@@ -55,8 +31,6 @@ export class TelegramService implements OnModuleInit {
     } else if (Address.is.ethereumAddress(address)) {
       const substrateMirror = Address.mirror.ethereumToSubstrate(address);
       await this.tryDrop(ctx, substrateMirror);
-    } else {
-      await this.reply(ctx, 'Submit valid Substrate or Ethereum address');
     }
   }
 
@@ -74,7 +48,7 @@ export class TelegramService implements OnModuleInit {
   }
 
   async availableByTtl(ctx, address: string, timeNow: number) {
-    if (this.adminAddresses.indexOf(address.toLowerCase())) return true;
+    if (this.adminAddresses.includes(address.toLowerCase())) return true;
 
     const lastTry = await this.cache.get<{ ctime: number }>(address);
     const timeLeft = (lastTry?.ctime || 0) + this.ttl - timeNow;

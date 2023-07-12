@@ -1,6 +1,13 @@
 import { ConfigModule } from '@nestjs/config';
 import * as process from 'process';
 import { CacheConfig, createCacheConfig } from './cache.config';
+import { BalancesConfig, createBalancesConfig } from './balances.config';
+
+export interface SlackConfig {
+  token: string;
+  channelName: string;
+  mentionUsers: string[];
+}
 
 export type Config = {
   port: number;
@@ -11,6 +18,10 @@ export type Config = {
   adminAddresses: string[];
 
   cache: CacheConfig;
+
+  adminUsers: number[];
+  slack: SlackConfig;
+  balances: BalancesConfig;
 };
 
 const loadConfig = (): Config => ({
@@ -27,6 +38,20 @@ const loadConfig = (): Config => ({
     : [],
 
   cache: createCacheConfig(process.env),
+  adminUsers: process.env.ADMIN_USERS
+    ? process.env.ADMIN_USERS.split(',')
+        .map((user) => +user)
+        .filter((user) => !!user)
+    : [],
+  slack: {
+    token: process.env.SLACK_TOKEN,
+    channelName: process.env.SLACK_CHANNEL_NAME,
+    mentionUsers: process.env.SLACK_MENTION_USERS
+      ? process.env.SLACK_MENTION_USERS.split(',')
+      : [],
+  },
+
+  balances: createBalancesConfig(),
 });
 
 export const GlobalConfigModule = ConfigModule.forRoot({
