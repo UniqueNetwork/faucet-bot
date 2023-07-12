@@ -5,10 +5,11 @@ import {
   AddressConfig,
   BalancesChainConfig,
   BalancesConfig,
-} from '../config/config.module';
+} from '../config/balances.config';
 import { BalanceResponse } from '@unique-nft/sdk';
 import * as BigNumber from 'big-number';
 import { WebClient } from '@slack/web-api';
+import { SlackConfig } from '../config/config.module';
 
 interface BalanceData {
   name: string;
@@ -29,32 +30,46 @@ const markdownTemplate = `{index}) {name} - *{balance}*
 @Injectable()
 export class BalancesService {
   private balanceConfig: BalancesConfig;
+  private slackConfig: SlackConfig;
   private adminUsers: number[];
 
   private web: WebClient;
   constructor(config: ConfigService) {
     this.balanceConfig = config.get<BalancesConfig>('balances');
     this.adminUsers = config.get<number[]>('adminUsers');
+    this.slackConfig = config.get<SlackConfig>('slack');
 
-    this.web = new WebClient(config.get('slackToken'));
+    if (
+      this.slackConfig.token &&
+      this.balanceConfig.criticalValue &&
+      this.slackConfig.channelName
+    ) {
+      this.web = new WebClient(this.slackConfig.token);
 
-    setInterval(() => {
+      setInterval(async () => {
+        await this.checkBalances();
+      }, 5 * 3_600_000);
+
       this.checkBalances();
-    }, 5 * 3_600_000);
-    // this.checkBalances();
+    }
   }
 
   private async getContractAddress(
     balanceConfig: BalancesChainConfig,
-  ): Promise<string> {
+  ): Promise<string | null> {
+    if (!balanceConfig.marketUrl) return null;
+
     const url = `${balanceConfig.marketUrl}/settings`;
     const settings = await fetch(url).then((res) => res.json());
     const contracts = settings.blockchain?.unique?.contracts;
+    if (!contracts?.length) return null;
+
     const lastContract = contracts[contracts.length - 1];
     return lastContract.address;
   }
 
   private async getBalance(restUrl: string, address: string) {
+    if (!restUrl) return null;
     const url = `${restUrl}/balance?address=${address}`;
     return fetch(url).then((res) => res.json());
   }
@@ -64,23 +79,25 @@ export class BalancesService {
   ): Promise<ChainBalanceData> {
     const contractAddress = await this.getContractAddress(balanceConfig);
 
-    const addresses: AddressConfig[] = [
-      ...balanceConfig.addressList,
-      {
+    const addresses: AddressConfig[] = [...balanceConfig.addressList];
+    if (contractAddress) {
+      addresses.push({
         name: 'contract',
         address: contractAddress,
-      },
-    ];
+      });
+    }
 
     const balances = await Promise.all(
       addresses.map((config: AddressConfig) => {
         return this.getBalance(balanceConfig.restUrl, config.address).then(
           (value) => {
-            return {
-              name: config.name,
-              address: config.address,
-              balance: value.availableBalance,
-            };
+            return value
+              ? {
+                  name: config.name,
+                  address: config.address,
+                  balance: value.availableBalance,
+                }
+              : undefined;
           },
         );
       }),
@@ -88,7 +105,7 @@ export class BalancesService {
 
     return {
       name: balanceConfig.name,
-      balances,
+      balances: balances.filter((b) => !!b),
     };
   }
 
@@ -112,6 +129,8 @@ export class BalancesService {
     if (!this.adminUsers.includes(userId)) {
       return ctx.reply(`User ${userId} is not admin`);
     }
+    await ctx.reply('Balances is being calculated, please wait...');
+
     const chainBalances = await Promise.all([
       this.getBalances(this.balanceConfig.unique),
       this.getBalances(this.balanceConfig.quartz),
@@ -156,7 +175,7 @@ ${this.balancesToString(chainBalanceData.balances, markdownTemplate)}`;
       })
       .join('\n\n');
 
-    const mentions = this.balanceConfig.mentionSlackUsers
+    const mentions = this.slackConfig.mentionUsers
       .map((id) => `<@${id}>`)
       .join(' ');
 
@@ -169,7 +188,7 @@ ${message}
 
 
 ${mentions}`,
-        channel: '#test-bot-alerts',
+        channel: this.slackConfig.channelName,
       });
     } catch (err) {
       console.log('err', err.message, JSON.stringify(err, null, 2));

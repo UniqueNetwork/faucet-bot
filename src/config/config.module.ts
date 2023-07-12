@@ -1,23 +1,12 @@
 import { ConfigModule } from '@nestjs/config';
 import * as process from 'process';
 import { CacheConfig, createCacheConfig } from './cache.config';
+import { BalancesConfig, createBalancesConfig } from './balances.config';
 
-export interface AddressConfig {
-  name: string;
-  address: string;
-}
-export interface BalancesChainConfig {
-  name: string;
-  marketUrl: string;
-  restUrl: string;
-  addressList: AddressConfig[];
-}
-
-export interface BalancesConfig {
-  criticalValue: string;
-  mentionSlackUsers: string[];
-  unique: BalancesChainConfig;
-  quartz: BalancesChainConfig;
+export interface SlackConfig {
+  token: string;
+  channelName: string;
+  mentionUsers: string[];
 }
 
 export type Config = {
@@ -31,29 +20,9 @@ export type Config = {
   cache: CacheConfig;
 
   adminUsers: number[];
-  slackToken: string;
+  slack: SlackConfig;
   balances: BalancesConfig;
 };
-
-function parseBalances(
-  name: string,
-  marketUrl: string,
-  restUrl: string,
-  addressEnv: string,
-): BalancesChainConfig {
-  return {
-    name,
-    marketUrl,
-    restUrl,
-    addressList: addressEnv.split(',').map((line) => {
-      const [name, address] = line.split(':');
-      return {
-        name,
-        address,
-      };
-    }),
-  };
-}
 
 const loadConfig = (): Config => ({
   port: parseInt(process.env.PORT, 10) || 3001,
@@ -74,26 +43,15 @@ const loadConfig = (): Config => ({
         .map((user) => +user)
         .filter((user) => !!user)
     : [],
-  slackToken: process.env.SLACK_TOKEN,
-
-  balances: {
-    criticalValue: process.env.BALANCE_CRITICAL_VALUE,
-    mentionSlackUsers: process.env.BALANCE_MENTION_SLACK_USERS
-      ? process.env.BALANCE_MENTION_SLACK_USERS.split(',')
+  slack: {
+    token: process.env.SLACK_TOKEN,
+    channelName: process.env.SLACK_CHANNEL_NAME,
+    mentionUsers: process.env.SLACK_MENTION_USERS
+      ? process.env.SLACK_MENTION_USERS.split(',')
       : [],
-    unique: parseBalances(
-      'unique',
-      process.env.UNIQUE_MAPI,
-      process.env.UNIQUE_REST,
-      process.env.UNIQUE_ADDRESS,
-    ),
-    quartz: parseBalances(
-      'quartz',
-      process.env.QUARTZ_MAPI,
-      process.env.QUARTZ_REST,
-      process.env.QUARTZ_ADDRESS,
-    ),
   },
+
+  balances: createBalancesConfig(),
 });
 
 export const GlobalConfigModule = ConfigModule.forRoot({
