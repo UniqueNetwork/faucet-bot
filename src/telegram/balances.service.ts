@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import fetch from 'node-fetch';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -28,7 +28,9 @@ const markdownTemplate = `{index}) {name} - *{balance}*
 \`{address}\``;
 
 @Injectable()
-export class BalancesService {
+export class BalancesService implements OnModuleInit {
+  private logger = new Logger(BalancesService.name);
+
   private balanceConfig: BalancesConfig;
   private slackConfig: SlackConfig;
   private adminUsers: number[];
@@ -45,13 +47,15 @@ export class BalancesService {
       this.slackConfig.channelName
     ) {
       this.web = new WebClient(this.slackConfig.token);
-
-      setInterval(async () => {
-        await this.checkBalances();
-      }, 5 * 3_600_000);
-
-      this.checkBalances();
     }
+  }
+
+  async onModuleInit(): Promise<void> {
+    setInterval(async () => {
+      await this.checkBalances();
+    }, 5 * 3_600_000);
+
+    await this.checkBalances();
   }
 
   private async getContractAddress(
@@ -149,11 +153,14 @@ ${this.balancesToString(chainBalanceData.balances, htmlTemplate)}`;
 
   private async checkBalances() {
     const criticalValue = BigNumber(this.balanceConfig.criticalValue);
+    this.logger.log(`check balances, critical value: ${criticalValue}`);
 
     const chainBalances = await Promise.all([
       this.getBalances(this.balanceConfig.unique),
       this.getBalances(this.balanceConfig.quartz),
     ]);
+
+    this.logger.log('chain balances', JSON.stringify(chainBalances, null, 2));
 
     const criticalBalances = chainBalances
       .map((chainBalance) => {
@@ -180,7 +187,7 @@ ${this.balancesToString(chainBalanceData.balances, markdownTemplate)}`;
       .join(' ');
 
     try {
-      await this.web.chat.postMessage({
+      const postMessageResult = await this.web.chat.postMessage({
         link_names: true,
         text: `Not enough money on the account
         
@@ -190,8 +197,13 @@ ${message}
 ${mentions}`,
         channel: this.slackConfig.channelName,
       });
+      this.logger.log('post message result', postMessageResult);
     } catch (err) {
-      console.log('err', err.message, JSON.stringify(err, null, 2));
+      this.logger.error(
+        'post message error',
+        err.message,
+        JSON.stringify(err, null, 2),
+      );
     }
   }
 }
