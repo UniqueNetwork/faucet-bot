@@ -4,7 +4,6 @@ import { Telegraf, Context } from 'telegraf';
 import { Update } from 'typegram';
 import { Address } from '@unique-nft/utils';
 import { FaucetService } from './faucet.service';
-import { BalancesService } from './balances.service';
 
 @Injectable()
 export class TelegramService implements OnModuleInit {
@@ -12,9 +11,6 @@ export class TelegramService implements OnModuleInit {
 
   @Inject(FaucetService)
   private faucetService: FaucetService;
-
-  @Inject(BalancesService)
-  private balancesService: BalancesService;
 
   private bot: Telegraf<Context<Update>>;
 
@@ -33,10 +29,6 @@ export class TelegramService implements OnModuleInit {
 
   async onMessage(ctx) {
     const text = ctx.message?.text || '';
-
-    if (text === '/balances') {
-      return this.balancesService.showBalances(ctx);
-    }
 
     const isAddress =
       Address.is.substrateAddress(text) || Address.is.ethereumAddress(text);

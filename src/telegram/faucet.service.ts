@@ -2,7 +2,7 @@ import { CACHE_MANAGER, Inject, Injectable, Logger } from '@nestjs/common';
 import { Cache } from 'cache-manager';
 import { Address } from '@unique-nft/utils';
 import { ConfigService } from '@nestjs/config';
-import { SdkService } from '../sdk/service';
+import { SdkService } from '../sdk/sdk.service';
 import { CacheConfig } from '../config/cache.config';
 import { formatDuration, getUsername } from './utils';
 
