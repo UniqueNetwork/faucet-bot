@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { IClient } from '@unique-nft/sdk';
-import { InjectAccount, InjectSdk } from './providers';
+import { InjectAccount, InjectSdk } from './sdk.providers';
 import { Account } from '@unique-nft/accounts';
 
 @Injectable()
