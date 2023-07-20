@@ -11,6 +11,7 @@ async function bootstrap() {
   app.enableCors({
     allowedHeaders: 'Content-Type, Accept',
     origin: true,
+    credentials: true,
   });
 
   const port = config.get('port');
