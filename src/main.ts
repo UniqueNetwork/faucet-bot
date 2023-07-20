@@ -9,6 +9,7 @@ async function bootstrap() {
   const config: ConfigService<Config> = app.get(ConfigService);
 
   app.enableCors({
+    allowedHeaders: 'Content-Type, Accept',
     origin: true,
   });
 
