@@ -16,18 +16,20 @@ export class BalancesService {
     this.balanceConfig = config.get<BalancesConfig>('balances');
   }
 
-  private async getContractAddress(
+  private async getContractAddresses(
     balanceConfig: BalancesChainConfig,
-  ): Promise<string | null> {
-    if (!balanceConfig.marketUrl) return null;
+  ): Promise<AddressConfig[]> {
+    if (!balanceConfig.marketUrl) return [];
 
     const url = `${balanceConfig.marketUrl}/settings`;
     const settings = await fetch(url).then((res) => res.json());
     const contracts = settings.blockchain?.unique?.contracts;
-    if (!contracts?.length) return null;
+    if (!contracts?.length) return [];
 
-    const lastContract = contracts[contracts.length - 1];
-    return lastContract.address;
+    return contracts.map((contract: any) => ({
+      address: contract.address,
+      name: `contract v${contract.version}`,
+    }));
   }
 
   private async getBalance(restUrl: string, address: string) {
@@ -39,15 +41,12 @@ export class BalancesService {
   public async getBalances(
     balanceConfig: BalancesChainConfig,
   ): Promise<ChainBalanceData> {
-    const contractAddress = await this.getContractAddress(balanceConfig);
+    const contractAddresses = await this.getContractAddresses(balanceConfig);
 
-    const addresses: AddressConfig[] = [...balanceConfig.addressList];
-    if (contractAddress) {
-      addresses.push({
-        name: 'contract',
-        address: contractAddress,
-      });
-    }
+    const addresses: AddressConfig[] = [
+      ...balanceConfig.addressList,
+      ...contractAddresses,
+    ];
 
     const balances = await Promise.all(
       addresses.map((config: AddressConfig) => {
