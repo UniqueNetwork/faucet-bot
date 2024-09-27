@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  rest:
+    image: uniquenetwork/rest:latest
+    container_name: rest_service
+    ports:
+      - '3000:3000'
+    env_file:
+      - .env
+    networks:
+      - app-network
+    restart: always
+
+  app:
+    build: .
+    container_name: main_app
+    ports:
+      - '3001:3001'
+    env_file:
+      - .env
+    depends_on:
+      - rest
+    environment:
+      REST_URL: http://rest:3000/v1
+    networks:
+      - app-network
+    restart: always
+
+networks:
+  app-network:
+    driver: bridge
